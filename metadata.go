@@ -20,7 +20,9 @@ type volumeMetadata struct {
 }
 
 // TODO: driver options provided by user during volume creation
-type VolumeOptions struct{}
+type VolumeOptions struct {
+	Share string `json:"share"`
+}
 
 func newMetadataDriver(metaDir string) (*metadataDriver, error) {
 	if err := os.MkdirAll(metaDir, 0700); err != nil {
@@ -54,6 +56,44 @@ func (m *metadataDriver) Load(name string) (volumeMetadata, error) {
 
 func (m *metadataDriver) Delete(name string) error {
 	return os.Remove(m.path(name))
+}
+
+func (m *metadataDriver) List() ([]string, error) {
+	var volumes []string
+
+	// return all the file names under metadata directory
+	if err := filepath.Walk(m.metaDir, func(path string, info os.FileInfo, inErr error) error {
+		if inErr != nil {
+			return inErr
+		}
+		if path == m.metaDir {
+			// directory itself, skip
+			return nil
+		}
+
+		if info.IsDir() { // a directory
+			return filepath.SkipDir
+		}
+
+		// base file name indicates the volume name
+		volumes = append(volumes, filepath.Base(path))
+		return nil
+	}); err != nil {
+		return volumes, fmt.Errorf("cannot list directory: %v", err)
+	}
+	return volumes, nil
+}
+
+func (m *metadataDriver) Get(name string) (volumeMetadata, error) {
+	var v volumeMetadata
+	b, err := ioutil.ReadFile(m.path(name))
+	if err != nil {
+		return v, fmt.Errorf("cannot read metadata: %v", err)
+	}
+	if err := json.Unmarshal(b, &v); err != nil {
+		return v, fmt.Errorf("cannot deserialize metadata: %v", err)
+	}
+	return v, nil
 }
 
 func (m *metadataDriver) path(name string) string {
